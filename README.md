@@ -2,16 +2,16 @@
 
 An unofficial browser port of Cylindrix, the 1995 vehicle-combat game, continuing [hyperlogic/cylindrix](https://github.com/hyperlogic/cylindrix). The original game, art and community port belong to their respective authors. Old Games Archive contributes compatibility fixes, a reproducible browser build and player integration.
 
-**Status: browser preview, 19 October 2026.** Custom matches have reached natural wins/losses and can restart. The ten-stage tournament passes transition/ending tests using the upstream debug shortcut, separately from ordinary gameplay tests. Pilot creation, cumulative statistics, keyboard settings, reload persistence and text-report export have passed browser tests. Physical Android/iOS acceptance remains pending; desktop touch emulation is recorded separately.
+**Status: playable browser release, 19 October 2026.** Custom matches have reached natural wins/losses and can restart. The ten-stage tournament passes transition/ending tests using the upstream debug shortcut, separately from ordinary gameplay tests. Pilot creation, cumulative statistics, keyboard settings, reload persistence and text-report export have passed browser tests. Android phone testing was reported successful by the site owner; iOS remains untested. Desktop touch emulation is recorded separately.
 
 ## Play and source
 
-- **[Play the browser preview](https://preview.oldgamesarchive.org/games/cylindrix?preview=true)**
-- [中文介绍与操作说明](https://preview.oldgamesarchive.org/zh-cn/games/cylindrix?preview=true)
-- [Download the exact corresponding source package](https://assets-preview.oldgamesarchive.org/games/native/cylindrix/c68709c087adb082627943439b11ad7811711519237bc4f35655f9c3be3eddd8/source.zip), also mirrored as `cylindrix-browser-source-2026-10-19.zip` in this repository.
+- **[Play Cylindrix in your browser](https://oldgamesarchive.org/games/cylindrix)**
+- [中文介绍与操作说明](https://oldgamesarchive.org/zh-cn/games/cylindrix)
+- [Download the exact corresponding source package](https://assets.oldgamesarchive.org/games/native/cylindrix/c68709c087adb082627943439b11ad7811711519237bc4f35655f9c3be3eddd8/source.zip), also mirrored as `cylindrix-browser-source-2026-10-19.zip` in this repository.
 - [Build instructions](BUILD.md) and [original upstream README](README.upstream.md).
 
-The preview supports both Custom Game and Tournament Game. It is not yet published to the production game catalogue. The repository retains upstream history and attribution; the browser source archive additionally includes the exact curated runtime, dependency source and license notices needed to reproduce this build.
+The browser release supports both Custom Game and Tournament Game and is listed in the production game catalogue. The repository retains upstream history and attribution. The tracked root C++ tree remains the upstream version; the modified browser source is distributed in the source archive above, together with the exact curated runtime, dependency source and license notices needed to reproduce this build.
 
 ## What changed
 
@@ -46,10 +46,10 @@ Preserve all original notices. Original source headers specify GNU Library GPL v
 
 This fork is maintained by [Old Games Archive](https://oldgamesarchive.org). Reproducible bug reports should include the game mode, level, browser, input device and steps to reproduce. Please do not include personal data or browser-storage contents.
 
-Upstream contributions will be split into small, independently reviewable fixes. No upstream pull request has been submitted for this preview. The website and its shared player UI are maintained separately.
+Upstream contributions will be split into small, independently reviewable fixes. No upstream pull request has been submitted. The website and its shared player UI are maintained separately.
 
 ## Reproduction and evidence
 
 The corresponding source package is 6,232,825 bytes; SHA-256: `db0d5db932e583fef05e07c73f1227b036c41f91bbdaf703ebc5a359683466f2`. Rebuilding the exported source in a separate build directory with the pinned toolchain reproduced JS/WASM/data byte for byte. The source archive's earlier asset-staging description still says custom matches; the unchanged curated assets were subsequently tested through all ten tournament stages. This README describes the current scope.
 
-Acceptance covers natural custom-match wins/losses, results/restart, pilot persistence, key remapping, text export, the ten-stage transition test, multi-touch input, pause/resume and audio disposal. Tournament transitions were accelerated with the original `-nuke` debug shortcut; this is not a claim of a naturally played full campaign. Physical phone testing and fresh-machine SDK installation remain unverified.
+Acceptance covers natural custom-match wins/losses, results/restart, pilot persistence, key remapping, text export, the ten-stage transition test, multi-touch input, pause/resume and audio disposal. Tournament transitions were accelerated with the original `-nuke` debug shortcut; this is not a claim of a naturally played full campaign. The Android report is not an expert full playthrough. iOS and fresh-machine SDK installation remain unverified.
