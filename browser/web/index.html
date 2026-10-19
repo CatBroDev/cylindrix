@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><title>Cylindrix — Restoration Lab prototype</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;background:#090d16;color:#e0e9ef}*{box-sizing:border-box}body{margin:0}main{max-width:1000px;margin:auto;padding:16px}header{display:flex;align-items:center;gap:12px;justify-content:space-between}h1{font-size:24px;margin:0}small{color:#a0cbd2}p{max-width:75ch}button,select{font:inherit;color:inherit;background:#152938;border:1px solid #73c9d6;border-radius:3px;min-height:44px;padding:8px 14px;cursor:pointer}button:disabled{opacity:.5;cursor:default}button:focus-visible{outline:3px solid #ffef65;outline-offset:2px}#start{background:#125c43}#status{min-height:24px;color:#9fe6c1}canvas{display:block;width:100%;max-height:68svh;aspect-ratio:4/3;object-fit:contain;background:#000;outline:0}#screen{background:black;border:1px solid #3b6069}#controls{padding:12px;background:#0c1824;border:1px solid #3b6069;display:none}.playkeys{display:grid;grid-template-columns:1fr 1fr;gap:20px}.dpad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,52px);gap:5px;align-self:center;justify-content:center}.dpad button{padding:0}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}kbd{display:block;font:12px monospace;color:#9fc1c9}button[data-key]{touch-action:none;user-select:none;-webkit-user-select:none}button[data-held]{background:#4b5965;border-color:#ffef65}.utility{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;border-top:1px solid #29404d;padding-top:12px}.utility button{flex:1}details{margin-top:12px}summary{cursor:pointer;min-height:44px;padding:8px}.notice{font-size:14px;border-left:3px solid #e4d670;padding-left:12px;color:#bbc8ce}a{color:#9ee4ef}@media(max-width:420px){main{padding:10px}.playkeys{gap:10px}.dpad{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:4px}.actions button{padding:5px;font-size:14px}.utility{gap:5px}.utility button{padding:6px;font-size:14px}h1{font-size:22px}header{align-items:start}}@media(orientation:landscape) and (max-height:500px){main{max-width:100%;padding:8px}#player{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,40%);align-items:center}canvas{max-height:75svh}#controls{padding:8px}.dpad{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px)}.notice{font-size:12px}}
+/* The SDL canvas retains intrinsic dimensions; constrain its grid min-size
+   and preserve its 4:3 bitmap instead of independently capping its height. */
+#screen,#controls{min-width:0}canvas{width:100%;height:auto;max-height:none}
+.playkeys{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+#commands button{flex:1 0 44px}
+@media(orientation:landscape) and (max-height:500px){
+  #screen{width:min(100%,calc(75svh * 4 / 3));margin:auto}
+  .playkeys{gap:8px}.actions button{padding:4px;font-size:14px}
+}
+.embedded main{padding:0;max-width:none}.embedded header,.embedded main>p,.embedded #controls{display:none!important}
+.embedded #player{display:block}.embedded #screen{width:100%;margin:0;border:0;display:grid;place-items:center}.embedded canvas{width:min(100%,calc(100dvh * 4 / 3));height:auto;max-height:none;object-fit:contain}
+.embedded #storage-status{display:none}.embedded,.embedded body,.embedded main,.embedded #player,.embedded #screen{height:100%;background:#000}
+</style>
+</head>
+<body><main>
+<header><div><small>OLD GAMES ARCHIVE · RESTORATION LAB</small><h1>Cylindrix</h1></div><select id="language" aria-label="Language"><option value="en">English</option><option value="zh">简体中文</option></select></header>
+<p class="notice" data-i18n="notice">Unofficial browser restoration: custom matches and the ten-stage tournament. Original sound effects are included; music and tournament movies are omitted. Pilot records and settings stay in this browser; an unfinished battle cannot be resumed.</p>
+<p><button id="start" data-i18n="start">Start prototype</button> <button id="stop" disabled data-i18n="stop">Stop game</button> <button id="sound" disabled aria-pressed="true">Sound off</button></p>
+<p id="status" role="status" data-i18n="ready">Ready to load. Tests remain silent.</p>
+<section id="player" aria-label="Game player"><div id="screen"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Cylindrix game"></canvas></div>
+<div id="controls"><div class="playkeys"><div class="dpad" aria-label="Directions"><button data-key="26" style="grid-area:1/2" aria-label="Forward">↑</button><button data-key="28" style="grid-area:2/1" aria-label="Turn left">←</button><button data-key="29" style="grid-area:2/3" aria-label="Turn right">→</button><button data-key="27" style="grid-area:3/2" aria-label="Backward">↓</button></div><div class="actions"><button data-key="31"><span data-i18n="laser">Laser</span><kbd>Ctrl</kbd></button><button data-key="30"><span data-i18n="missile">Missile</span><kbd>Space</kbd></button><button data-key="18"><span data-i18n="mode">Air / ground</span><kbd>S</kbd></button><button data-key="23"><span data-i18n="special">Special</span><kbd>X</kbd></button></div></div>
+<div class="utility"><button data-key="45"><span data-i18n="confirm">Confirm</span><kbd>Enter</kbd></button><button data-key="70"><span data-i18n="back">Menu / back</span><kbd>Esc</kbd></button><button data-key="21"><span data-i18n="view">View</span><kbd>V</kbd></button></div>
+<details><summary data-i18n="more">More controls</summary><div class="utility"><button data-key="0"><span data-i18n="accelerate">Accelerate</span><kbd>A</kbd></button><button data-key="25"><span data-i18n="decelerate">Decelerate</span><kbd>Z</kbd></button><button data-key="32"><span data-i18n="strafe">Sidestep + arrow</span><kbd>Alt</kbd></button></div><div class="utility" id="commands"></div></details></div></section>
+<p data-i18n="instructions">Press Enter to skip the intro. In the pilot menu, press Up to select an existing pilot, then Enter. Choose Start Game → Custom Game → Start Custom Game. Hold direction and attack buttons together during play.</p>
+<p><a href="https://www.hardcrawler.com/cylindrix/">Original programmer and controls</a> · <a href="https://github.com/hyperlogic/cylindrix">Upstream source</a> · <a href="source.zip">Modified source and build instructions</a> · <a href="notices.txt">Credits and license notices</a></p>
+</main><script>
+const translations={en:{},zh:{notice:'本地测试样机：仅验收自定义对战，暂不提供声音和持久存档。这是原作的非官方浏览器移植。',start:'启动样机',stop:'停止游戏',ready:'等待加载。测试保持静音。',laser:'激光',missile:'导弹',mode:'空中 / 地面',special:'特殊武器',confirm:'确认',back:'菜单 / 返回',view:'切换视角',more:'更多按键',accelerate:'加速',decelerate:'减速',strafe:'侧移 + 方向键',instructions:'按 Enter 跳过片头。在驾驶员菜单按向上选择已有驾驶员，再按 Enter。依次选择 Start Game → Custom Game → Start Custom Game。对战时可以同时按住方向键和攻击键。'}};
+translations.zh.notice='非官方浏览器修复版：可进行自定义对战和十关锦标赛，保留原版音效，不含配乐和锦标赛过场影片。驾驶员记录与设置保存在此浏览器中，未结束的对局不能接着打。';
+document.querySelectorAll('[data-i18n]').forEach(el=>translations.en[el.dataset.i18n]=el.textContent);
+document.querySelector('#language').onchange=e=>{document.documentElement.lang=e.target.value==='zh'?'zh-CN':'en';document.querySelectorAll('[data-i18n]').forEach(el=>{if(el.id!=='status')el.textContent=translations[e.target.value][el.dataset.i18n]});updateStatus()};
+const canvas=document.querySelector('#canvas'), status=document.querySelector('#status'), start=document.querySelector('#start'), stop=document.querySelector('#stop');
+let ready=false,stopped=false;const pointers=new Map(),physical=new Map();
+function updateStatus(){const zh=document.documentElement.lang==='zh-CN';const muted=!ready||stopped||Module._oga_muted();status.textContent=stopped?(zh?'游戏已停止。刷新页面可重新开始。':'Game stopped. Reload to start again.'):ready?(zh?'样机已启动':'Prototype running'):(zh?'等待加载。默认静音。':'Ready to load. Sound is off by default.');const b=document.querySelector('#sound');b.textContent=zh?(muted?'声音已关闭':'声音已开启'):(muted?'Sound off':'Sound on');b.setAttribute('aria-pressed',String(!!muted))}
+const heldCount=key=>[...pointers.values(),...physical.values()].filter(k=>k===key).length;
+function release(id){const key=pointers.get(id);if(key===undefined)return;pointers.delete(id);if(!heldCount(key)){if(ready&&!stopped)Module._oga_key(key,0);document.querySelectorAll(`[data-key="${key}"]`).forEach(b=>b.removeAttribute('data-held'))}}
+function releaseAll(){physical.clear();[...pointers.keys()].forEach(release);if(ready&&!stopped)Module._oga_release_keys()}
+for(let i=0;i<12;i++){const b=document.createElement('button');b.dataset.key=String(33+i);b.textContent='F'+(i+1);document.querySelector('#commands').append(b)}
+document.querySelectorAll('[data-key]').forEach(b=>{b.onpointerdown=e=>{if(!ready||stopped)return;e.preventDefault();const key=+b.dataset.key;b.setPointerCapture(e.pointerId);pointers.set(e.pointerId,key);Module._oga_key(key,1);b.setAttribute('data-held','')};b.onpointerup=e=>release(e.pointerId);b.onpointercancel=e=>release(e.pointerId);b.onlostpointercapture=e=>release(e.pointerId)});
+window.addEventListener('blur',releaseAll);document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseAll()});window.addEventListener('pagehide',()=>{releaseAll();if(ready&&!stopped)Module._oga_stop()});
+const keyCodes={ArrowUp:26,ArrowDown:27,ArrowLeft:28,ArrowRight:29,Space:30,ControlLeft:31,AltLeft:32,Enter:45,Minus:56,Equal:57,BracketLeft:58,BracketRight:59,Backslash:60,Semicolon:61,Quote:62,Comma:63,Period:64,Slash:65,Backquote:66,Tab:67,ShiftLeft:68,Backspace:69,Escape:70};
+for(let i=0;i<26;i++)keyCodes['Key'+String.fromCharCode(65+i)]=i;for(let i=0;i<10;i++)keyCodes['Digit'+i]=46+i;for(let i=1;i<=12;i++)keyCodes['F'+i]=32+i;
+Object.assign(keyCodes,{ControlRight:31,AltRight:32,ShiftRight:68,NumpadEnter:45});
+document.addEventListener('keydown',e=>{const key=keyCodes[e.code];if(!ready||stopped||key===undefined||e.target.tagName==='SELECT')return;e.preventDefault();physical.set(e.code,key);Module._oga_key(key,1)});
+document.addEventListener('keyup',e=>{const key=keyCodes[e.code];if(key===undefined)return;physical.delete(e.code);if(ready&&!stopped&&!heldCount(key))Module._oga_key(key,0)});
+window.Module={canvas,arguments:['-no_anims'],print:t=>console.log(t),printErr:t=>console.error(t),onAbort:t=>{status.textContent='Load failed: '+t;stop.disabled=true;},onRuntimeInitialized:()=>{ready=true;status.textContent=document.documentElement.lang==='zh-CN'?'样机已启动 · 静音':'Prototype running · silent';document.querySelector('#controls').style.display='block';stop.disabled=false;canvas.focus()},onGameStopped:()=>{stopped=true;stop.disabled=true;document.querySelectorAll('[data-key]').forEach(b=>b.disabled=true);status.textContent=document.documentElement.lang==='zh-CN'?'游戏已停止。刷新页面可重新开始。':'Game stopped. Reload to start again.'}};
+start.onclick=()=>{start.disabled=true;status.textContent=document.documentElement.lang==='zh-CN'?'正在加载…':'Loading…';const s=document.createElement('script');s.src='cylindrix.js';s.onerror=()=>status.textContent='Could not load engine';document.body.append(s)};
+stop.onclick=()=>{releaseAll();if(ready&&!stopped)Module._oga_stop()};
+Module.onStatsSaved=path=>{
+ const filename=path.split('/').pop();if(!/^(OVER|TOUR|CUST)\d{3}\.TXT$/.test(filename))return;
+ const b=document.querySelector('#report');b.hidden=false;b.onclick=()=>{
+ const href=URL.createObjectURL(new Blob([Module.FS.readFile(path)],{type:'text/plain'}));
+ const a=document.createElement('a');a.href=href;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(href),1000);
+ };
+};
+const runtimeReady=Module.onRuntimeInitialized;
+Module.onRuntimeInitialized=()=>{runtimeReady();document.querySelector('#sound').disabled=false;updateStatus()};
+const gameStopped=Module.onGameStopped;
+Module.onGameStopped=()=>{gameStopped();document.querySelector('#sound').disabled=true;updateStatus()};
+document.querySelector('#sound').onclick=()=>{if(ready&&!stopped){Module._oga_mute(!Module._oga_muted());updateStatus()}};
+</script><p><button id="report" hidden>Download match report</button></p><p id="storage-status" role="status"></p><script src="persistence.js"></script><script src="bridge.js"></script></body></html>

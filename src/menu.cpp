@@ -38,6 +38,9 @@
 #include "jonsb.h"  /* to play menu sounds */
 #include "stats.h"
 #include "config.h" /* to save game config */
+#ifdef BROWSER
+#include <emscripten.h>
+#endif
 
 #ifdef GLCYLINDRIX
 #include "glcylindrix.h"
@@ -177,6 +180,7 @@ void sound_menu_draw_menu();
 MenuScreen keyboard_menu;
 GeneralMenuData keyboard_menu_data;
 int keyboard_menu_waitforkey = 0;
+int during_game_keyboard_menu_waitforkey = 0;
 
 void keyboard_menu_up_arrow();
 void keyboard_menu_down_arrow();
@@ -508,6 +512,48 @@ void tournament_wingman_menu_left_arrow();
 /* exit_event_loop tells the event loop when to exit */
 
 long exit_event_loop = FALSE;
+
+static char saved_stats_notice[256] = {};
+static bool notice_wait_for_release = false;
+static bool menu_voice_pending = false;
+static void WaitForMenuVoice() { menu_voice_pending = true; }
+static void ShowStatsSavedNotice(const char* filename)
+{
+    snprintf(saved_stats_notice, sizeof(saved_stats_notice), "%s", filename);
+    notice_wait_for_release = true;
+#ifdef BROWSER
+    EM_ASM({ if (Module.onStatsSaved) Module.onStatsSaved(UTF8ToString($0)); }, filename);
+#endif
+}
+
+bool ProcessMenuNotice()
+{
+    // Yield to the browser/audio event loop rather than spinning in a menu callback.
+    if (menu_voice_pending) {
+        if (!Is_Voice_Done()) return true;
+        menu_voice_pending = false;
+    }
+    if (!saved_stats_notice[0]) return false;
+    Pop_Buffer(menu_stuff.general_menu_background.buffer);
+    string_blit("STATS SAVED AS", 90, 65, menu_stuff.menu_text.buffer,
+                menu_stuff.menu_text.xpixels + 1, menu_stuff.menu_text.ypixels + 1, SELECTED_TEXT_COLOR);
+    micro_string_blit(saved_stats_notice, 20, 95, menu_stuff.micro_text.buffer,
+                      menu_stuff.micro_text.xpixels + 1, menu_stuff.micro_text.ypixels + 1, SELECTED_TEXT_COLOR);
+    micro_string_blit("PRESS ANY KEY TO CONTINUE", 10, 190, menu_stuff.micro_text.buffer,
+                      menu_stuff.micro_text.xpixels + 1, menu_stuff.micro_text.ypixels + 1, SELECTED_TEXT_COLOR);
+    Swap_Buffer();
+#ifdef GLCYLINDRIX
+    GL_SubloadAndSwapBuffer();
+#endif
+    bool held = false, pressed = false;
+    for (int key = 0; key < SIZEOFKEYTABLE; ++key) {
+        held |= SYS_KeyDown((unsigned char)key) != 0;
+        pressed |= SYS_KeyPressed((unsigned char)key) != 0;
+    }
+    if (notice_wait_for_release) { if (!held) notice_wait_for_release = false; }
+    else if (pressed) saved_stats_notice[0] = '\0';
+    return true;
+}
 
 void make_menu_current( MenuScreen *menu )
 {
@@ -1356,6 +1402,7 @@ void pilot_delete_menu_return_key()
 
 void pilot_delete_menu_escape_key()
 {
+    Save_Game_Configuration(&game_configuration);
     make_menu_current( &pilot_selection_menu );
 
     Play_Menu_Sound( menu_stuff.menu_sounds.esc_sound );
@@ -1735,6 +1782,7 @@ void pilot_input_menu_draw_menu()
             Save_Overall_Stats_Binary( &temp_stats, "gamedata/xxx7.xxx" );
         }
 
+        Save_Game_Configuration(&game_configuration);
         strcpy( pilot_selection_menu_data.item[0], game_configuration.pilot_names.slot0 );
         strcpy( pilot_selection_menu_data.item[1], game_configuration.pilot_names.slot1 );
         strcpy( pilot_selection_menu_data.item[2], game_configuration.pilot_names.slot2 );
@@ -2050,6 +2098,7 @@ void options_menu_return_key()
 
 void options_menu_escape_key()
 {
+    Save_Game_Configuration(&game_configuration);
     make_menu_current( &main_menu );
 
     Play_Menu_Sound( menu_stuff.menu_sounds.esc_sound );
@@ -2123,6 +2172,11 @@ void init_options_menu()
     }
 
     options_menu_data.num_items = 6;
+#ifdef BROWSER
+    // Browser fullscreen/touch settings live in the shared website player.
+    // DOS joystick calibration and excluded cinematics are not browser options.
+    options_menu_data.num_items = 3;
+#endif
 
     options_menu_data.current_selection = 0;
 }
@@ -2573,6 +2627,7 @@ void keyboard_menu_return_key()
 
 void keyboard_menu_escape_key()
 {
+    Save_Game_Configuration(&game_configuration);
     make_menu_current( &options_menu );
 
     Play_Menu_Sound( menu_stuff.menu_sounds.esc_sound );
@@ -3463,6 +3518,14 @@ void game_menu_left_arrow()
 
 void game_menu_return_key()
 {
+#ifdef CYLINDRIX_WEB_PREVIEW
+    // Old Games Archive, 2026-10-19: the preview excludes the unverified
+    // tournament cinematics. Enforce its scope, not merely a wrapper notice.
+    make_menu_current( &custom_game_menu );
+    game_configuration.game_type = CustomGame;
+    Play_Menu_Sound( menu_stuff.menu_sounds.enter_sound );
+    return;
+#endif
 
     if( game_menu_data.current_selection == 0 ) { /* tournament game */
 
@@ -3554,10 +3617,15 @@ void init_game_menu()
     game_menu.escape_key = (Method)game_menu_escape_key;
     game_menu.draw_menu = (Method)game_menu_draw_menu;
 
+#ifdef CYLINDRIX_WEB_PREVIEW
+    strcpy( game_menu_data.item[0], "CUSTOM GAME" );
+    game_menu_data.num_items = 1;
+#else
     strcpy( game_menu_data.item[0], "TOURNAMENT GAME" );
     strcpy( game_menu_data.item[1], "CUSTOM GAME" );
 
     game_menu_data.num_items = 2;
+#endif
 
     game_menu_data.current_selection = 0;
 }
@@ -4080,7 +4148,7 @@ void custom_wingman1_menu_return_key()
 
 
     Play_Voice( wingman_menu_data.info[current_selection].sample );
-    while( !Is_Voice_Done() );
+    WaitForMenuVoice();
 
     game_configuration.red1_ai = selection_to_ai( current_selection );
     game_configuration.red1_vehicle = wingman_menu_data.info[current_selection].preferred_vehicle;
@@ -4103,7 +4171,7 @@ void custom_wingman2_menu_return_key()
     /* play sample */
     
     Play_Voice( wingman_menu_data.info[current_selection].sample );
-    while( !Is_Voice_Done() );
+    WaitForMenuVoice();
 
     game_configuration.red2_ai = selection_to_ai( current_selection );
     game_configuration.red2_vehicle = wingman_menu_data.info[current_selection].preferred_vehicle;
@@ -4129,7 +4197,7 @@ void custom_opponent1_menu_return_key()
     /* play sample */
 
     Play_Voice( wingman_menu_data.info[current_selection].sample );
-    while( !Is_Voice_Done() );
+    WaitForMenuVoice();
 
     game_configuration.blue0_ai = selection_to_ai( current_selection );
     game_configuration.blue0_vehicle = wingman_menu_data.info[current_selection].preferred_vehicle;
@@ -4150,7 +4218,7 @@ void custom_opponent2_menu_return_key()
     /* play sample */
 
     Play_Voice( wingman_menu_data.info[current_selection].sample );
-    while( !Is_Voice_Done() );
+    WaitForMenuVoice();
 
     game_configuration.blue1_ai = selection_to_ai( current_selection );
     game_configuration.blue1_vehicle = wingman_menu_data.info[current_selection].preferred_vehicle;
@@ -4171,7 +4239,7 @@ void custom_opponent3_menu_return_key()
     /* play sample */
 
     Play_Voice( wingman_menu_data.info[current_selection].sample );
-    while( !Is_Voice_Done() );
+    WaitForMenuVoice();
 
     game_configuration.blue2_ai = selection_to_ai( current_selection );
     game_configuration.blue2_vehicle = wingman_menu_data.info[current_selection].preferred_vehicle;
@@ -5090,35 +5158,35 @@ void custom_vehicle0_menu_return_key()
 
     if( vehicle_menu_data.current_selection == Beetle ) {
 		Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-		while( !Is_Voice_Done() );
+		WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     make_menu_current( &custom_game_menu );
     DB_Clear_Screen();
@@ -5136,35 +5204,35 @@ void custom_vehicle1_menu_return_key()
 
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );    
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     init_custom_vehicle2_menu();
     make_menu_current( &custom_vehicle2_menu );
@@ -5177,35 +5245,35 @@ void custom_vehicle2_menu_return_key()
     
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }    
     make_menu_current( &custom_game_menu );
     DB_Clear_Screen();    
@@ -5223,35 +5291,35 @@ void custom_vehicle3_menu_return_key()
 
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     
     init_custom_vehicle4_menu();
@@ -5264,35 +5332,35 @@ void custom_vehicle4_menu_return_key()
     
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
 		Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     init_custom_vehicle5_menu();
     make_menu_current( &custom_vehicle5_menu );
@@ -5304,35 +5372,35 @@ void custom_vehicle5_menu_return_key()
     
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     make_menu_current( &custom_game_menu );
     DB_Clear_Screen();    
@@ -6369,35 +6437,35 @@ void tournament_vehicle0_menu_return_key()
     
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     make_menu_current( &tournament_game_setup_menu );
     DB_Clear_Screen();    
@@ -6415,36 +6483,36 @@ void tournament_vehicle1_menu_return_key()
     
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
 
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     init_tournament_vehicle2_menu();
     make_menu_current( &tournament_vehicle2_menu );
@@ -6457,35 +6525,35 @@ void tournament_vehicle2_menu_return_key()
     
     if( vehicle_menu_data.current_selection == Beetle ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.beetle_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Wasp ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.wasp_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Flea ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.flea_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Roach ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.roach_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Spider ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.spider_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Locust ) {
 		Play_Voice( menu_stuff.vehicle_name_sounds.locust_sound );
-		while( !Is_Voice_Done() );
+		WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Dragonfly ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.dragonfly_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }
     else if( vehicle_menu_data.current_selection == Mosquito ) {
         Play_Voice( menu_stuff.vehicle_name_sounds.mosquito_sound );
-        while( !Is_Voice_Done() );
+        WaitForMenuVoice();
     }    
     make_menu_current( &tournament_game_setup_menu );
     DB_Clear_Screen();
@@ -6829,7 +6897,7 @@ void tournament_wingman1_menu_return_key()
     /* play sample */
 
     Play_Voice( wingman_menu_data.info[current_selection].sample );
-    while( !Is_Voice_Done() );        
+    WaitForMenuVoice();
 
     game_configuration.red1_ai = selection_to_ai( current_selection );
     game_configuration.red1_vehicle = wingman_menu_data.info[current_selection].preferred_vehicle;
@@ -6852,7 +6920,7 @@ void tournament_wingman2_menu_return_key()
     /* play sample */
     
     Play_Voice( wingman_menu_data.info[current_selection].sample );
-    while( !Is_Voice_Done() );
+    WaitForMenuVoice();
 
 
     game_configuration.red2_ai = selection_to_ai( current_selection );
@@ -7177,7 +7245,7 @@ void view_stats_menu_return_key()
         
         for( i = 0; i < 1000; i++ ) {
         
-            sprintf( filename, "%sSTATS/OVER%03d.TXT", g_DataPath, i );
+            sprintf( filename, "%sstats/OVER%03d.TXT", g_DataPath, i );
             
             if( (fp = fopen( filename, "r" ) ) == NULL ) {
             
@@ -7216,7 +7284,7 @@ void view_stats_menu_return_key()
 		GL_SubloadAndSwapBuffer();
 #endif
         
-        while( !Jon_Kbhit() );
+        ShowStatsSavedNotice(filename);
         
         make_menu_current( &main_menu );
 
@@ -7800,6 +7868,7 @@ void during_game_options_menu_return_key()
 
 void during_game_options_menu_escape_key()
 {
+    Save_Game_Configuration(&game_configuration);
     make_menu_current( &during_game_menu );
     
     Play_Menu_Sound( menu_stuff.menu_sounds.esc_sound );
@@ -7864,6 +7933,9 @@ void init_during_game_options_menu()
     }
 
     during_game_options_menu_data.num_items = 5;
+#ifdef BROWSER
+    during_game_options_menu_data.num_items = 3;
+#endif
 
     during_game_options_menu_data.current_selection = 0;
 }
@@ -8298,123 +8370,14 @@ void during_game_keyboard_menu_left_arrow()
 
 void during_game_keyboard_menu_return_key()
 {
-    unsigned long scancode;
-
-    /* change color 2 to red */
-    
-    Set_One( 1, SELECTED_TEXT_COLOR ); /* 1 is nonsense right now */
-
-    while( !Jon_Kbhit() );
-
-    scancode = Jon_Getkey();
-
-    /* change color 2 back to green */
-    
-    Enable_Palette_Member( &menu_stuff.general_menu_background, SELECTED_TEXT_COLOR );
-    
-    Play_Menu_Sound( menu_stuff.menu_sounds.enter_sound );
-    
-
-    if( during_game_keyboard_menu_data.current_selection == 0 ) { /* fire laser: */
-
-        game_configuration.keyboard_config.laser = scancode;
-
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 1 ) { /* fire missile: */
-
-             game_configuration.keyboard_config.missile = scancode;
-
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 2 ) { /* special weapon: */
-
-             game_configuration.keyboard_config.special = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 3 ) { /* mode switch: */
-
-             game_configuration.keyboard_config.mode_switch = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 4 ) { /* up: */
-
-             game_configuration.keyboard_config.up = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 5 ) { /* down: */
-
-             game_configuration.keyboard_config.down = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 6 ) { /* left: */
-
-             game_configuration.keyboard_config.left = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 7 ) { /* right: */
-
-             game_configuration.keyboard_config.right = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 8 ) { /* up throttle: */
-
-             game_configuration.keyboard_config.up_throttle = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 9 ) { /* down throttle: */
-
-             game_configuration.keyboard_config.down_throttle = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 10 ) { /* strafe: */
-
-             game_configuration.keyboard_config.strafe = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 11 ) { /* wing 1 get pylons: */
-
-             game_configuration.keyboard_config.wing_1_pylon = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 12 ) { /* wing 1 attack: */
-
-             game_configuration.keyboard_config.wing_1_attack = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 13 ) { /* wing 1 attack radar base: */
-
-             game_configuration.keyboard_config.wing_1_attack_rb = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 14 ) { /* wing 1 defend radar base: */
-
-             game_configuration.keyboard_config.wing_1_defend_rb = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 15 ) { /* wing 1 group together: */
-
-             game_configuration.keyboard_config.wing_1_group = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 16 ) { /* wing 1 cancel orders: */
-
-             game_configuration.keyboard_config.wing_1_cancel = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 17 ) { /* wing 2 get pylons: */
-
-             game_configuration.keyboard_config.wing_2_pylon = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 18 ) { /* wing 2 attack: */
-
-             game_configuration.keyboard_config.wing_2_attack = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 19 ) { /* wing 2 attack radar base: */
-
-             game_configuration.keyboard_config.wing_2_attack_rb = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 20 ) { /* wing 2 defend radar base: */
-
-             game_configuration.keyboard_config.wing_2_defend_rb = scancode;
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 21 ) { /* wing 2 group together: */
-
-             game_configuration.keyboard_config.wing_2_group = scancode;
-
-    }
-    else if( during_game_keyboard_menu_data.current_selection == 22 ) { /* wing 2 cancel orders: */
-
-             game_configuration.keyboard_config.wing_2_cancel = scancode;
-    }
-
-} /* End of during_game_keyboard_menu_return_key */
+    Play_Menu_Sound(menu_stuff.menu_sounds.enter_sound);
+    Set_One(1, SELECTED_TEXT_COLOR);
+    during_game_keyboard_menu_waitforkey = 1;
+}
 
 void during_game_keyboard_menu_escape_key()
 {
+    Save_Game_Configuration(&game_configuration);
     make_menu_current( &during_game_options_menu );
     
     Play_Menu_Sound( menu_stuff.menu_sounds.esc_sound );
@@ -8522,6 +8485,103 @@ void during_game_keyboard_menu_draw_menu()
 #ifdef GLCYLINDRIX
 	GL_SubloadAndSwapBuffer();
 #endif
+
+    int found_key = 0, key = 0;
+	if ( during_game_keyboard_menu_waitforkey )
+	{
+		current_menu.delay_input = 1;
+
+		for ( i = 0; i < SIZEOFKEYTABLE; ++i )
+		{
+			if ( SYS_KeyPressed( (unsigned char)i ) )
+			{
+				found_key = 1;
+				key = i;
+				break;
+			}
+		}
+
+		if ( found_key )
+		{
+			/* change color 2 back to green */
+
+			Enable_Palette_Member( &menu_stuff.general_menu_background, SELECTED_TEXT_COLOR );
+
+			if( during_game_keyboard_menu_data.current_selection == 0 ) { /* fire laser: */
+				game_configuration.keyboard_config.laser = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 1 ) { /* fire missile: */
+				game_configuration.keyboard_config.missile = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 2 ) { /* special weapon: */
+				game_configuration.keyboard_config.special = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 3 ) { /* mode switch: */
+				game_configuration.keyboard_config.mode_switch = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 4 ) { /* up: */
+				game_configuration.keyboard_config.up = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 5 ) { /* down: */
+				game_configuration.keyboard_config.down = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 6 ) { /* left: */
+				game_configuration.keyboard_config.left = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 7 ) { /* right: */
+				game_configuration.keyboard_config.right = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 8 ) { /* up throttle: */
+				game_configuration.keyboard_config.up_throttle = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 9 ) { /* down throttle: */
+				game_configuration.keyboard_config.down_throttle = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 10 ) { /* strafe: */
+				game_configuration.keyboard_config.strafe = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 11 ) { /* wing 1 get pylons: */
+				game_configuration.keyboard_config.wing_1_pylon = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 12 ) { /* wing 1 attack: */
+				game_configuration.keyboard_config.wing_1_attack = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 13 ) { /* wing 1 attack radar base: */
+				game_configuration.keyboard_config.wing_1_attack_rb = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 14 ) { /* wing 1 defend radar base: */
+				game_configuration.keyboard_config.wing_1_defend_rb = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 15 ) { /* wing 1 group together: */
+				game_configuration.keyboard_config.wing_1_group = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 16 ) { /* wing 1 cancel orders: */
+				game_configuration.keyboard_config.wing_1_cancel = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 17 ) { /* wing 2 get pylons: */
+				game_configuration.keyboard_config.wing_2_pylon = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 18 ) { /* wing 2 attack: */
+				game_configuration.keyboard_config.wing_2_attack = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 19 ) { /* wing 2 attack radar base: */
+				game_configuration.keyboard_config.wing_2_attack_rb = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 20 ) { /* wing 2 defend radar base: */
+				game_configuration.keyboard_config.wing_2_defend_rb = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 21 ) { /* wing 2 group together: */
+				game_configuration.keyboard_config.wing_2_group = key;
+			}
+			else if( during_game_keyboard_menu_data.current_selection == 22 ) { /* wing 2 cancel orders: */
+				game_configuration.keyboard_config.wing_2_cancel = key;
+			}
+
+			Play_Menu_Sound( menu_stuff.menu_sounds.enter_sound );
+
+			during_game_keyboard_menu_waitforkey = 0;
+		}
+	 }
 }
 
 void init_during_game_keyboard_menu()
@@ -9270,7 +9330,7 @@ void custom_game_stat_menu_return_key()
         
         for( i = 0; i < 1000; i++ ) {
                 
-            sprintf( filename, "%sSTATS/CUST%03d.TXT", g_DataPath, i );
+            sprintf( filename, "%sstats/CUST%03d.TXT", g_DataPath, i );
             
             if( (fp = fopen( filename, "r" ) ) == NULL ) {
             
@@ -9309,7 +9369,7 @@ void custom_game_stat_menu_return_key()
 	GL_SubloadAndSwapBuffer();
 #endif
         
-        while( !Jon_Kbhit() );
+        ShowStatsSavedNotice(filename);
         
         exit_event_loop = TRUE;
         make_menu_current( &custom_game_menu );
@@ -9678,7 +9738,7 @@ void tournament_game_stat_menu_return_key()
         
         for( i = 0; i < 1000; i++ ) {
                 
-            sprintf( filename, "%sSTATS/TOUR%03d.TXT", g_DataPath, i );
+            sprintf( filename, "%sstats/TOUR%03d.TXT", g_DataPath, i );
             
             if( (fp = fopen( filename, "r" ) ) == NULL ) {
             
@@ -9717,7 +9777,7 @@ void tournament_game_stat_menu_return_key()
 	GL_SubloadAndSwapBuffer();
 #endif
         
-        while( !Jon_Kbhit() );
+        ShowStatsSavedNotice(filename);
         
         exit_event_loop = TRUE;
         make_menu_current( &tournament_game_setup_menu );

@@ -1,0 +1,18 @@
+Cylindrix — unofficial browser restoration, 2026-10-19
+Original game: Goldtree Enterprises. Original programmer's release statement:
+https://www.hardcrawler.com/cylindrix/
+Community port: https://github.com/hyperlogic/cylindrix
+Base commit: ee13bd95036331520181eeefe6f12d0638b1ffe8
+Old Games Archive contributes compatibility fixes and browser/player integration.
+
+Custom matches and the ten-stage tournament are included. Original sound effects
+are retained; later MP3 music and tournament movies are omitted. Browser-local
+pilot records/settings are supported, not mid-battle or campaign checkpoint saves.
+Physical Android/iOS acceptance remains pending. See the source README for test scope.
+Download source.zip alongside this file for complete corresponding modified source.
+
+Original source headers specify GNU Library GPL v2; upstream root LICENSE contains
+LGPL v2.1; historical COPYING contains GPL v2. Preserve these separate notices in
+source.zip/licenses and the source files; no replacement blanket license is claimed.
+SDL2, libyaml and Emscripten notices are included. ASSET-MANIFEST.json documents
+original resource provenance and hashes; BUILD.md documents the pinned toolchain.

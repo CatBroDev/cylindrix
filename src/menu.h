@@ -108,6 +108,8 @@ void ipx_game_stat_menu_event_loop( int victory );
 void init_all_main_menus();
 
 void make_menu_current( MenuScreen *menu );
+// Non-blocking acknowledgement; SDL/browser events keep running.
+bool ProcessMenuNotice();
 
 void character_picture_blit( long anchor_x, long anchor_y, pcx_picture *pcx );
 

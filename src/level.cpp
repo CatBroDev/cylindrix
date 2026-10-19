@@ -32,9 +32,20 @@ int Load_Level( char *filename, level_type *level )
      if( (fp = fopen( newfilename, "rb" )) == NULL )
          return 0;
 
-     fread( level, sizeof(level_type), 1, fp );
+     const bool loaded = fread( level, sizeof(level_type), 1, fp ) == 1;
 
      fclose( fp );
+     if (!loaded) return 0;
+     // DOS level records contain backslashes, including doubled separators.
+     // Normalize in memory, keeping the historical binary assets unchanged.
+     char* paths[] = {level->pylon_config_filename, level->energy_square_filename,
+         level->palette_filename, level->animation_filename, level->tube_filename,
+         level->turret_filename, level->base_filename,
+         level->north_hub_filename, level->south_hub_filename};
+     for (char* path : paths) {
+         path[39] = '\0';
+         for (int i = 0; path[i]; ++i) if (path[i] == '\\') path[i] = '/';
+     }
     
      return(1); /* Function was successful */
     }

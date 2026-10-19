@@ -23,6 +23,9 @@
 #include "types.h"
 #include "config.h"
 #include "serial.h"
+#ifdef BROWSER
+#include <emscripten.h>
+#endif
 
 extern const char* g_DataPath;
 
@@ -31,26 +34,13 @@ extern const char* g_DataPath;
 
 void get_pilot_name( FILE *fp, char *str )
 {
-    char temp_str[80];
-    char ch;
+    int ch;
     int index = 0;
-    
-    /* find the open angle braket */
-    
-    while( fgetc( fp ) != '<' );
-    
-    /* read until we hit close angle braket */
-    
-    while( (ch = fgetc( fp )) != '>' ) {        
-        temp_str[index] = ch;
-        index++;
+    while ((ch = fgetc(fp)) != '<' && ch != EOF) {}
+    while ((ch = fgetc(fp)) != '>' && ch != EOF) {
+        if (index < 79) str[index++] = (char)ch;
     }
-    
-    /* make sure we end the string with the null character */
-    
-    temp_str[index] = '\0';
-    
-    strcpy( str, temp_str );    
+    str[index] = '\0';
 }
 
 
@@ -442,7 +432,9 @@ void Save_Game_Configuration( game_configuration_type *game_configuration )
 	sprintf(newfilename,"%sgamedata/game.cfg",g_DataPath);
 
 
-     fp = fopen( newfilename, "r" );
+     // The historical port opened this output file read-only, dropping changes.
+     fp = fopen( newfilename, "w" );
+     if (!fp) { perror("Save_Game_Configuration"); return; }
 
 
      switch( game_configuration->serial_com_port )
@@ -736,6 +728,10 @@ void Save_Game_Configuration( game_configuration_type *game_configuration )
      fprintf(fp, "%d ", game_configuration->fullscreen );
      fprintf(fp, " %s\n", "fullscreen" ); /* Write the comment */
      
-     fclose( fp );
-
+     const bool failed = ferror(fp) != 0;
+     const int closeResult = fclose(fp);
+     if (failed || closeResult != 0) { perror("Save_Game_Configuration"); return; }
+#ifdef BROWSER
+     EM_ASM({ if (Module.persistProfiles) Module.persistProfiles(); });
+#endif
     } /* End of Save_Game_Configuration() */

@@ -1512,7 +1512,7 @@ void init_world_stuff( WorldStuff *world_stuff )
     
     world_stuff->light[X] = 128;
     world_stuff->light[Y] = 0 << MEXP;
-    world_stuff->light[Z] = -3 << MEXP;
+    world_stuff->light[Z] = -(3 << MEXP);
 
     /* there aren't any explosions yet so explosion_list should be NULL */
 

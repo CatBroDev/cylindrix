@@ -55,7 +55,7 @@
 
 extern const char* g_DataPath;
 
-long vrpz = (-3 << MEXP);           /* z coord of the view reference point */
+long vrpz = -(3 << MEXP);           /* z coord of the view reference point */
 long xmin = (-4383);   /* -3.0 */   /* min x coord of window on view plane */
 long xmax = (4383);    /* 3.0 */    /* max x coord of window on view plane */
 long ymin = (-3159);   /* -2.5 */   /* min y coord of window on view plane */

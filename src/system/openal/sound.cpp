@@ -11,7 +11,15 @@
 #include <AL/al.h>
 #include <AL/alc.h>
 #endif
+// Old Games Archive, 2026-10-19: the browser pilot reuses original WAV effects.
+// Later MP3 music is excluded; retain its decoder unchanged on native builds.
+#ifndef BROWSER
 #include <mpg123.h>
+#else
+#include <emscripten.h>
+using mpg123_handle = void;
+static unsigned int browserPlayRequests = 0;
+#endif
 
 ALCcontext* g_context = 0;
 ALCdevice* g_device = 0;
@@ -42,7 +50,7 @@ struct SYS_Wave* usedList = 0;
 // used for dynamic sounds (fire & forget, play once)
 #define SIZEOFSOURCEPOOL 50
 ALuint sourcePool[SIZEOFSOURCEPOOL];
-extern char* g_DataPath;
+extern const char* g_DataPath; // OGA 2026-10-19: match omega.cpp for MSVC linking.
 
 #ifdef SYS_SOUNDDEBUG
 FILE* soundLog;
@@ -117,6 +125,11 @@ void SYS_InitSound()
 	// create context
 	ALCcontext* context = alcCreateContext(device,0);
 	alcMakeContextCurrent(context);
+#ifdef BROWSER
+    g_context = context;
+    g_device = device;
+    alListenerf(AL_GAIN, 0.0f); // Silent until an explicit player action.
+#endif
 	CheckForErrors();
 	
 	// use linear distance model & disable doppler.
@@ -137,11 +150,13 @@ void SYS_InitSound()
 	memset(sourcePool, 0, sizeof(ALuint) * SIZEOFSOURCEPOOL);
 	CheckForErrors();
 	
+#ifndef BROWSER
 	int error = mpg123_init();
 	if (error != MPG123_OK)
 	{
 		printf("Error mpg123_init() : %s\n", mpg123_plain_strerror(error));
 	}
+#endif
 }
 
 void SYS_ShutdownSound()
@@ -173,15 +188,29 @@ void SYS_ShutdownSound()
 	fclose( soundLog );
 #endif
 	
+#ifndef BROWSER
 	mpg123_exit();
+#endif
 	
 	ALCcontext* context = alcGetCurrentContext();
 	CheckForErrors();
 	ALCdevice* device = alcGetContextsDevice(context);
 	CheckForErrors();
+#ifdef BROWSER
+    // Pinned Emscripten 4.0.23 clears its scheduler in alcDestroyContext but
+    // leaves the Web Audio device open. Close this engine's own context first.
+    EM_ASM({
+        var ctx = AL.contexts[$0];
+        if (ctx && ctx.audioCtx.state !== 'closed') ctx.audioCtx.close();
+    }, (int)context);
+#endif
 	alcMakeContextCurrent(0);
 	alcDestroyContext(context);
 	alcCloseDevice(device);
+#ifdef BROWSER
+    g_context = nullptr;
+    g_device = nullptr;
+#endif
 }
 
 static void SYS_ProcessStreaming();
@@ -237,8 +266,10 @@ static void ReturnWaveToPool( SYS_Wave* wave )
 		wave->next->prev = wave->prev;
 	if ( usedList == wave )
 		usedList = wave->next;
+#ifndef BROWSER
 	if ( wave->mh )
 		mpg123_delete(wave->mh);
+#endif
 	
 	// add wave to head of freeList
 	wave->next = freeList;
@@ -303,6 +334,7 @@ static SYS_SOUNDHANDLE SYS_LoadWAVFile(const char* filename)
 	return (SYS_SOUNDHANDLE)wave;
 }
 
+#ifndef BROWSER
 static SYS_SOUNDHANDLE SYS_LoadMP3File(const char* filename)
 {
 	mpg123_handle* mh = 0;
@@ -397,6 +429,11 @@ static bool SYS_StreamNextBuffer(int bufferIndex, SYS_Wave* wave)
 	
 	return true;
 }
+
+#else
+static SYS_SOUNDHANDLE SYS_LoadMP3File(const char*) { return 0; }
+static bool SYS_StreamNextBuffer(int, SYS_Wave*) { return false; }
+#endif
 
 static void SYS_ProcessStreaming()
 {	
@@ -553,6 +590,9 @@ void SYS_TriggerSoundVolume( SYS_SOUNDHANDLE soundHandle, unsigned char volume )
 		alSourcei(sourcePool[i], AL_SOURCE_RELATIVE, 1);
 		CheckForErrors();
 		alSourcePlay(sourcePool[i]);
+#ifdef BROWSER
+        ++browserPlayRequests;
+#endif
 		CheckForErrors();
 	}
 }
@@ -588,6 +628,9 @@ void SYS_PlaySoundVolume( SYS_SOUNDHANDLE soundHandle, int looping, unsigned cha
 		alSourcei(wave->source, AL_SOURCE_RELATIVE, 1);		
 		CheckForErrors();
 		alSourcePlay(wave->source);
+#ifdef BROWSER
+        ++browserPlayRequests;
+#endif
 		CheckForErrors();
 #ifdef SYS_SOUNDDEBUG		
 		printf("playing stream %s\n", wave->filename );
@@ -612,13 +655,18 @@ void SYS_PlaySoundVolume( SYS_SOUNDHANDLE soundHandle, int looping, unsigned cha
 		alSourcei(wave->source, AL_SOURCE_RELATIVE, 1);
 		CheckForErrors();
 		alSourcePlay(wave->source);
+#ifdef BROWSER
+        ++browserPlayRequests;
+#endif
 		CheckForErrors();
 	}
 }
 
 void SYS_SetListenerOrientation( float position[3], float forward[3], float up[3] )
 {
+#ifndef BROWSER // OGA: orientation changes must not override the player's mute.
 	alListenerf(AL_GAIN, 1.0f);
+#endif
 	CheckForErrors();
 	alListenerfv(AL_POSITION, position);
 	CheckForErrors();
@@ -690,6 +738,9 @@ void SYS_TriggerSound3D( SYS_SOUNDHANDLE soundHandle, float position[3], unsigne
 		CheckForErrors();
 		
 		alSourcePlay(sourcePool[i]);
+#ifdef BROWSER
+        ++browserPlayRequests;
+#endif
 		CheckForErrors();
 	}
 }
@@ -745,3 +796,21 @@ void SYS_StopAllSounds()
 		p = p->next;
 	}
 }
+
+#ifdef BROWSER
+extern "C" {
+EMSCRIPTEN_KEEPALIVE void oga_mute(int muted) {
+    if (g_context) alListenerf(AL_GAIN, muted ? 0.0f : 1.0f);
+}
+EMSCRIPTEN_KEEPALIVE int oga_muted() {
+    ALfloat gain = 0; if (g_context) alGetListenerf(AL_GAIN, &gain);
+    return gain == 0.0f;
+}
+EMSCRIPTEN_KEEPALIVE int oga_audio_active() { return g_context != nullptr; }
+EMSCRIPTEN_KEEPALIVE unsigned int oga_audio_plays() { return browserPlayRequests; }
+EMSCRIPTEN_KEEPALIVE int oga_audio_buffers() {
+    int count = 0; for (auto* p = usedList; p; p = p->next) if (p->buffer) ++count;
+    return count;
+}
+}
+#endif

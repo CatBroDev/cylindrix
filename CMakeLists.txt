@@ -3,7 +3,20 @@ set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems
 
 cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 set(PROJECT_NAME cylindrix)
-project(${PROJECT_NAME} LANGUAGES CXX)
+project(${PROJECT_NAME} LANGUAGES C CXX)
+
+if(EMSCRIPTEN)
+    # OGA 2026-10-19: reuse the pinned libyaml source from the native build.
+    if(NOT CYLINDRIX_YAML_SOURCE OR NOT CYLINDRIX_WEB_ASSETS)
+        message(FATAL_ERROR "Set CYLINDRIX_YAML_SOURCE and CYLINDRIX_WEB_ASSETS")
+    endif()
+    set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CYLINDRIX_YAML_SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/yaml)
+    # vcpkg's Windows host patch renames strdup; the WASM libc uses POSIX strdup.
+    target_compile_definitions(yaml PRIVATE _strdup=strdup)
+    set(CYLINDRIX_SOUND_SOURCE src/system/openal/sound.cpp)
+else()
 
 # opengl
 find_package(OpenGL REQUIRED)
@@ -26,6 +39,8 @@ find_package(mpg123 CONFIG REQUIRED)
 
 # libyaml
 find_package(yaml CONFIG REQUIRED)
+set(CYLINDRIX_SOUND_SOURCE src/system/openal/sound.cpp)
+endif()
 
 add_compile_definitions(GLCYLINDRIX)
 
@@ -47,7 +62,9 @@ add_executable(${PROJECT_NAME}
     src/fli.cpp
     src/fx.cpp
     src/gameloop.cpp
-    src/glescylindrix.cpp
+    # Old Games Archive, 2026-10-19: the desktop SDL context requires the
+    # existing desktop GL renderer; the GLES renderer is unfinished.
+    src/glcylindrix.cpp
 	src/hud.cpp
     src/jonsb.cpp
     src/keys.cpp
@@ -72,12 +89,38 @@ add_executable(${PROJECT_NAME}
 	src/util.cpp
     src/voices.cpp
     src/system/sdl/system.cpp
-    src/system/openal/sound.cpp
+    ${CYLINDRIX_SOUND_SOURCE}
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
+option(CYLINDRIX_LAB "Enable bounded, silent input replay and evidence capture" OFF)
+if(CYLINDRIX_LAB)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE CYLINDRIX_LAB)
+    target_sources(${PROJECT_NAME} PRIVATE src/lab_replay.cpp)
+endif()
+if(MSVC)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES)
+endif()
 
 
+if(EMSCRIPTEN)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE BROWSER)
+    option(CYLINDRIX_WEB_PREVIEW "Limit the browser preview to custom matches" OFF)
+    if(CYLINDRIX_WEB_PREVIEW)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE CYLINDRIX_WEB_PREVIEW)
+    endif()
+    target_compile_options(${PROJECT_NAME} PRIVATE -sUSE_SDL=2)
+    target_link_libraries(${PROJECT_NAME} PRIVATE yaml openal)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        # The FFP-only fast path submits unused texture attributes beyond the
+        # browser's MAX_VERTEX_ATTRIBS. Use the checked compatibility path.
+        -sUSE_SDL=2 -sLEGACY_GL_EMULATION=1 -sGL_FFP_ONLY=0 -sGL_UNSAFE_OPTS=0
+        -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=2097152 -sASSERTIONS=1
+        -sEXPORTED_RUNTIME_METHODS=ccall,FS
+        --preload-file "${CYLINDRIX_WEB_ASSETS}@/"
+    )
+    set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".js")
+else()
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${OPENGL_LIBRARIES}
     $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
@@ -88,6 +131,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenAL::OpenAL
     MPG123::libmpg123
 )
+endif()
 
 if(SHIPPING)
     add_compile_definitions(SHIPPING)

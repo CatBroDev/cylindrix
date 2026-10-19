@@ -11,7 +11,7 @@ An unofficial browser port of Cylindrix, the 1995 vehicle-combat game, continuin
 - [Download the exact corresponding source package](https://assets.oldgamesarchive.org/games/native/cylindrix/c68709c087adb082627943439b11ad7811711519237bc4f35655f9c3be3eddd8/source.zip), also mirrored as `cylindrix-browser-source-2026-10-19.zip` in this repository.
 - [Build instructions](BUILD.md) and [original upstream README](README.upstream.md).
 
-The browser release supports both Custom Game and Tournament Game and is listed in the production game catalogue. The repository retains upstream history and attribution. The tracked root C++ tree remains the upstream version; the modified browser source is distributed in the source archive above, together with the exact curated runtime, dependency source and license notices needed to reproduce this build.
+The browser release supports both Custom Game and Tournament Game and is listed in the production game catalogue. The repository retains upstream history and attribution. The modified game code is now tracked directly in `src/` and `CMakeLists.txt`. The `browser/` directory contains the browser shell, persistence, pinned dependency source, original notices and reproducible runtime staging. The original corresponding-source ZIP remains available unchanged for the published build.
 
 ## What changed
 

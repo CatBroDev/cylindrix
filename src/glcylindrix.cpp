@@ -1,4 +1,7 @@
 // work in progress
+// Old Games Archive, 2026-10-19: sized texture formats, convex triangle fans,
+// integer texture environment and constant colors outside vertex submission
+// preserve desktop GL behavior while supporting Emscripten's GL emulation.
 #ifdef WIN32
 #include <windows.h> // AJT: DEPENDENCY ISSUE
 #endif
@@ -80,7 +83,7 @@ static void GL_FrameBufferTextureInit()
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
-	glTexImage2D( GL_TEXTURE_2D, 0, 4, 512, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, 512, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
 }
 
 // creates a 1x256 texture that we will use to subload the current 8-bit palette into.
@@ -92,7 +95,7 @@ static void GL_PalletteTextureInit()
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
-	glTexImage2D( GL_TEXTURE_2D, 0, 4, 1, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
+	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, 1, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0 );
 }
 
 // renders the frameBufferTexture on a quad that fills the screen.
@@ -129,14 +132,14 @@ static void GL_RenderBuffer()
 	glLoadIdentity();
 
 	glBindTexture( GL_TEXTURE_2D, frameBufferTexture );
-	glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 
 	glEnable(GL_TEXTURE_2D);
 	glDisable(GL_LIGHTING);
 
 	float orig_aspect = 1.33333f; // 4:3
-	glBegin( GL_POLYGON );
 	glColor3f( fadeAlpha, fadeAlpha, fadeAlpha );
+	glBegin( GL_TRIANGLE_FAN );
 
 	glTexCoord2f( 0, FBV );
 	glVertex3f( -orig_aspect, -1, 0 );
@@ -310,7 +313,7 @@ void GL_DrawTube( WorldStuff* worldStuff, enum TubeType tubeType )
 	// draw the shizit.
 	for ( i = 0; i < worldStuff->tube.faces; ++i )
 	{
-		glBegin( GL_POLYGON );
+		glBegin( GL_TRIANGLE_FAN );
 		for ( j = 0; j < worldStuff->tube.face[i].size; j++ )
 		{
 			// convert from fixed point
@@ -381,7 +384,7 @@ void GL_DrawEverything( WorldStuff* worldStuff )
 		n[1] /= temp;
 		n[2] /= temp;
 
-		glBegin( GL_POLYGON );
+		glBegin( GL_TRIANGLE_FAN );
 		for ( j = 0; j < worldStuff->everything.face[i].size; j++ )
 		{
 			// convert from fixed point
@@ -445,7 +448,7 @@ void GL_SwapBuffers()
     glLoadIdentity();
 
 	glBindTexture( GL_TEXTURE_2D, frameBufferTexture );
-	glTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 
 	glEnable(GL_TEXTURE_2D);
 	glDisable(GL_LIGHTING);
@@ -456,8 +459,8 @@ void GL_SwapBuffers()
 	glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
 	float orig_aspect = 1.33333f; // 4:3
-    glBegin( GL_POLYGON );
 	glColor4f( 1, 1, 1, 1 );
+    glBegin( GL_TRIANGLE_FAN );
 
 	glTexCoord2f( 0, FBV );
 	glVertex3f( -orig_aspect, -1, 0 );

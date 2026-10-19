@@ -28,7 +28,7 @@
 #include "clipping.h"  /* needed in point_visible */
 #include "util.h"
 
-extern int32_t new_hither;     /* needed in point_visible */
+extern long new_hither; // OGA 2026-10-19: match the definition in object.cpp.
 extern Matrix scale_matrix; /* needed in point_visible */
 extern game_configuration_type game_configuration; /* From omega.c */
 extern level_type level; /* From omega.c...we need it for yon_clipping_plane */

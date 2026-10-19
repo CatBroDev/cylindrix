@@ -7,9 +7,41 @@
 #include "../../gameloop.h"
 #include "../system.h"
 #include <stdarg.h>
+#ifdef CYLINDRIX_LAB
+#include "../../lab_replay.h"
+#endif
 
 #ifdef BROWSER
 #include <emscripten.h>
+#include <emscripten/heap.h>
+extern unsigned char keysDown[255];
+extern unsigned char keysPressed[255];
+static unsigned char webKeys[255] = {};
+static bool webStopped = false;
+static bool webPaused = false;
+static unsigned int webFrames = 0;
+extern void LabGameSnapshot(unsigned int milliseconds);
+extern "C" {
+EMSCRIPTEN_KEEPALIVE void oga_key(int key, int down) {
+    if (key >= 0 && key < SIZEOFKEYTABLE) webKeys[key] = down ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE void oga_release_keys() {
+    memset(webKeys, 0, sizeof(webKeys));
+    memset(keysDown, 0, sizeof(keysDown));
+    memset(keysPressed, 0, sizeof(keysPressed));
+}
+EMSCRIPTEN_KEEPALIVE void oga_snapshot() { LabGameSnapshot(SDL_GetTicks()); }
+EMSCRIPTEN_KEEPALIVE void oga_stop() { webStopped = true; }
+EMSCRIPTEN_KEEPALIVE void oga_pause(int paused) {
+    webPaused = paused != 0;
+    if (webPaused) oga_release_keys();
+}
+EMSCRIPTEN_KEEPALIVE int oga_paused() { return webPaused ? 1 : 0; }
+// Read-only diagnostics for replay, input lifetime and resource measurements.
+EMSCRIPTEN_KEEPALIVE int oga_key_held(int key) { return key >= 0 && key < SIZEOFKEYTABLE ? keysDown[key] : 0; }
+EMSCRIPTEN_KEEPALIVE unsigned int oga_frames() { return webFrames; }
+EMSCRIPTEN_KEEPALIVE size_t oga_heap_bytes() { return emscripten_get_heap_size(); }
+}
 #endif
 
 #ifdef DARWIN
@@ -17,8 +49,7 @@
 #include <OpenGL/glu.h>
 #include <GLUT/glut.h>
 #else
-#include <GL/gl.h>
-#include <GL/glu.h>
+#include <SDL2/SDL_opengl.h>
 #endif
 
 unsigned char keysDown[255];
@@ -33,6 +64,12 @@ SDL_GLContext g_gl_context;
 
 void SYS_SwapBuffers()
 {
+#ifdef BROWSER
+    ++webFrames;
+#endif
+#ifdef CYLINDRIX_LAB
+    LabCapture();
+#endif
     SDL_GL_SwapWindow(g_window);
 }
 
@@ -161,7 +198,13 @@ static void processKeys()
     {
         SDL_Scancode scanCode = keyToScancode[i];
 
-        if ( keys[scanCode] )
+#ifdef BROWSER
+        // Browser keys share one explicit lifetime; blur releases physical
+        // keys and touches together instead of leaving SDL's key cache held.
+        if (webKeys[i])
+#else
+        if (keys[scanCode])
+#endif
         {
             keysPressed[i] = keysDown[i] ? 0 : 1;
             keysDown[i] = 1;
@@ -176,9 +219,20 @@ static void processKeys()
 
 static bool process()
 {
+#ifdef BROWSER
+    // Poll resize/quit events while suspended, but do not advance game state.
+    if (webPaused) return false;
+#endif
+#ifdef CYLINDRIX_LAB
+    if (LabActive()) LabKeys(keysDown, keysPressed);
+    else
+#endif
     processKeys();
     SYS_ProcessSound();
     bool done = GameLoop();
+#ifdef CYLINDRIX_LAB
+    done = LabTick() || done;
+#endif
 
     return done;
 }
@@ -193,6 +247,16 @@ static bool event_loop()
         {
         case SDL_QUIT:
             done = true;
+            break;
+
+        // OGA 2026-10-19: SDL2 resizes the browser drawing buffer but the old
+        // SDL1-only handler below left GL's viewport at the previous size.
+        case SDL_WINDOWEVENT:
+            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                SDL_GL_GetDrawableSize(g_window, &g_width, &g_height);
+                if (g_width > 0 && g_height > 0) glViewport(0, 0, g_width, g_height);
+            }
             break;
 
         /* AJT: OLD SDL1 code
@@ -221,7 +285,22 @@ static bool event_loop()
 #ifdef BROWSER
 static void browser_loop()
 {
-    event_loop();
+    // OGA: use browser painting cadence while preserving the original
+    // 30-Hz simulation. Drop missed ticks after suspension; never fast-forward.
+    static double nextTick = 0.0;
+    const double now = emscripten_get_now();
+    const double step = 1000.0 / 30.0;
+    if (!webStopped && now < nextTick) return;
+    if (!nextTick || now > nextTick + step) nextTick = now;
+    nextTick += step;
+    if (webStopped || event_loop()) {
+        emscripten_cancel_main_loop();
+        GameShutdown();
+        SDL_GL_DeleteContext(g_gl_context);
+        SDL_DestroyWindow(g_window);
+        SDL_Quit();
+        EM_ASM({ if (Module.onGameStopped) Module.onGameStopped(); });
+    }
 }
 #endif
 
@@ -239,7 +318,8 @@ int main( int argc, char* argv[] )
             printf("SDL_Init() failed! SDL_Error = %s\n", error);
     }
 
-    setenv("__GL_SYNC_TO_VBLANK", "1", true);
+    // Old Games Archive, 2026-10-19: SDL's portable API also builds on MSVC.
+    SDL_setenv("__GL_SYNC_TO_VBLANK", "1", 1);
     g_fullscreen = false;
 
     /* AJT: OLD SDL1 code
@@ -270,6 +350,9 @@ int main( int argc, char* argv[] )
     */
 
     uint32_t windowFlags = SDL_WINDOW_OPENGL;
+#ifdef CYLINDRIX_LAB
+    if (LabInit()) windowFlags |= SDL_WINDOW_HIDDEN;
+#endif
     if (g_fullscreen)
     {
         windowFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
@@ -280,7 +363,7 @@ int main( int argc, char* argv[] )
     }
     g_width = 320 * 2;
     g_height = 240 * 2;
-    g_window = SDL_CreateWindow("splatapult", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, g_width, g_height, windowFlags);
+    g_window = SDL_CreateWindow("Cylindrix", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, g_width, g_height, windowFlags);
 
     if (!g_window)
     {
@@ -302,11 +385,16 @@ int main( int argc, char* argv[] )
         done = event_loop();
     }
     GameShutdown();
+#ifdef CYLINDRIX_LAB
+    LabShutdown();
+#endif
+    SDL_GL_DeleteContext(g_gl_context);
+    SDL_DestroyWindow(g_window);
     SDL_Quit();
 
     return 0;
 #else
-    emscripten_set_main_loop(browser_loop, 30, false);
+    emscripten_set_main_loop(browser_loop, 0, true);
     return 0;
 #endif
 }

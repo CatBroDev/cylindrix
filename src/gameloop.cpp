@@ -552,7 +552,7 @@ void PlayCustomGameExit()
 
 void PlayTournamentGameEnter()
 {
-	tournamentLevel = level_warp;
+	tournamentLevel = (level_warp >= 0 && level_warp < NumLevels) ? level_warp : 0;
 
     PlayGameMovieEnter();
     currentPlayGameState = PLAYGAMESTATE_MOVIE;
@@ -937,10 +937,12 @@ void PlayGameFightProcess()
     update_leader( user_vehicle_index() );
 
     // Frame rate ceiling
+#ifndef BROWSER // OGA: the browser main loop already schedules 30 frames/sec.
 	if ( ceiling_on )
 	{
 		while ( SYS_GetTimeMS() < loopStartTime + 33 );
 	}
+#endif
 }
 
 void PlayGameFightExit()
@@ -1015,10 +1017,12 @@ void PlayGameOutroProcess()
     update_leader( user_vehicle_index() );
 
     // Frame rate ceiling
+#ifndef BROWSER
 	if ( ceiling_on )
 	{
 		while ( SYS_GetTimeMS() < loopStartTime + 33 );
 	}
+#endif
 
     get_only_ai_input( world_stuff.player_array, ai_active, master );
 
@@ -1120,6 +1124,14 @@ void PlayGameOutroExit()
 
 		Figure_Game_Stats( &game_stats );
 		Add_Game_Stats_To_Overall_Stats( &game_stats, &overall_stats );
+        // The modern loop omitted the legacy pilot-statistics write entirely.
+        if (game_configuration.slot_num >= 0 && game_configuration.slot_num < 8) {
+            char filename[32];
+            snprintf(filename, sizeof(filename), "gamedata/xxx%d.xxx", game_configuration.slot_num);
+            if (!Save_Overall_Stats_Binary(&overall_stats, filename))
+                fprintf(stderr, "Could not save pilot statistics\n");
+        }
+        Save_Game_Configuration(&game_configuration);
 
 		currentPlayGameState = PLAYGAMESTATE_STATS;
     }
@@ -1266,6 +1278,7 @@ void GameInit( int argc, const char* argv[] )
 
 int GameLoop()
 {
+    if (ProcessMenuNotice()) return quitGame;
 	enum GameStateEnum previousGameState;
 
 	previousGameState = currentGameState;
@@ -1292,10 +1305,36 @@ int GameLoop()
 
 void GameShutdown()
 {
+    Save_Game_Configuration(&game_configuration);
 	if (music)
 		SYS_ReleaseSound(music);
 
 	SYS_ShutdownSound();
 	GL_Cylindrix_Shutdown();
 }
+
+#if defined(CYLINDRIX_LAB) || defined(BROWSER)
+// Old Games Archive, 2026-10-19: read-only gameplay evidence, no forced wins.
+void LabGameSnapshot(unsigned int ms) {
+    extern GeneralMenuData during_game_menu_data;
+    printf("LAB_STATE ms=%u game=%d play=%d round=%d wins=%d losses=%d", ms,
+        (int)currentGameState, (int)currentPlayGameState, round, user_victories, enemy_victories);
+    if(currentGameState == GAMESTATE_CUSTOMGAME || currentGameState == GAMESTATE_TOURNAMENTGAME) {
+        for(int i=0;i<6;++i) {
+            const auto& tank = world_stuff.player_array[i].tank;
+            int count=0; for(auto* p=tank.projectile_list;p && count<1000;p=p->next) ++count;
+            printf(" p%d=[%.4f,%.4f,%.4f,hp:%ld,alive:%d,shots:%d]",i,
+                tank.orient.position[0],tank.orient.position[1],tank.orient.position[2],
+                tank.current_hitpoints,(int)tank.alive,count);
+        }
+    }
+    printf(" level=%d\n", tournamentLevel);
+    if(currentPlayGameState == PLAYGAMESTATE_MENU) {
+        printf("LAB_MENU items=%ld selected=%ld first=%s font=%p size=%dx%d\n",
+            during_game_menu_data.num_items,during_game_menu_data.current_selection,
+            during_game_menu_data.item[0],(void*)menu_stuff.menu_text.buffer,
+            menu_stuff.menu_text.xpixels,menu_stuff.menu_text.ypixels);
+    }
+}
+#endif
 

@@ -128,7 +128,10 @@ int SYS_KeyPressed( unsigned char key );
 
 
 // sound stuff
-typedef unsigned long SYS_SOUNDHANDLE;
+// Old Games Archive, 2026-10-19: these handles store pointers; Windows x64
+// keeps unsigned long at 32 bits, so it truncates the original pointer.
+#include <stdint.h>
+typedef uintptr_t SYS_SOUNDHANDLE;
 void SYS_InitSound();
 void SYS_ShutdownSound();
 void SYS_ProcessSound();	// TODO: maybe this should be hidden from game client.

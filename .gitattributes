@@ -1,0 +1,8 @@
+# Runtime staging verifies the original asset bytes on every platform.
+3d_data/** -text
+pcx_data/** -text
+gamedata/** -text
+wav_data/** -text
+FLI/** -text
+people.dat -text
+browser/runtime-overrides/** -text
