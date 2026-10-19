@@ -46,7 +46,7 @@ Preserve all original notices. Original source headers specify GNU Library GPL v
 
 This fork is maintained by [Old Games Archive](https://oldgamesarchive.org). Reproducible bug reports should include the game mode, level, browser, input device and steps to reproduce. Please do not include personal data or browser-storage contents.
 
-Upstream contributions will be split into small, independently reviewable fixes. No upstream pull request has been submitted. The website and its shared player UI are maintained separately.
+Upstream contributions are split into small, independently reviewable fixes. [PR #3](https://github.com/hyperlogic/cylindrix/pull/3) submits the isolated Windows x64 sound-handle and declaration fixes; it does not include the larger browser restoration tracked here. The website and its shared player UI are maintained separately.
 
 ## Reproduction and evidence
 
